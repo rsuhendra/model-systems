@@ -1,0 +1,155 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+```{r import libraries}
+library(pracma)
+library(plotly)
+```
+
+```{r function for simulating data}
+AR_1var <- function(beta, noise, L) {
+  #beta is variables starting from beta0
+  #noise should be std of noise
+  #L is length of series
+  Y <- array(0,dim = L)
+  b0 <- beta[1]
+  b <- beta[2:length(beta)]
+  lb <- length(b)
+  for(i in (length(beta)-1):L) {
+    Y[i+1] <- b0 + sum(b*Y[i:(i-lb+1)]) + sqrt(noise) * randn(n=1, m=1)
+  }
+  meanY <- mean(Y)
+  stdY  <- std(Y)
+  output <- list(meanY = meanY, stdY = stdY, Y = Y)
+  return(output)
+}
+
+AR_2var <- function(self_para, cross_para, noise, var1) {
+  #self_para is variable starting from beta0 for X onto itself
+  #cross_para is dependencies on Y
+  #noise is std of noise
+  #var1 is the other series
+  
+  b0 <- self_para[1]
+  b <- self_para[2:length(self_para)]
+  a <- cross_para
+  lb <- length(b)
+  la <- length(a)
+  
+  l <- max(length(a),length(b))
+  Y <- var1$Y
+  L <- length(Y)-1
+  
+  X <- array(0, dim = L)
+  
+  for(i in l:L) {
+    X[i+1] <- b0 + sum(b*X[i:(i-lb+1)]) + sum(a*Y[i:(i-la+1)]) + sqrt(noise) * randn(n=1, m=1)
+  }
+  
+  meanX <- mean(X); stdX <- std(X)
+  output <- list(meanX = meanX, stdX = stdX, X = X, Y = var1)
+  return(output)
+  
+}
+
+```
+
+```{r function for prediction}
+ARpredict1 <- function(Y, N_AR, response) {
+  L <- length(Y)
+  response <- cbind(response[(N_AR + 1) : L])
+  L <- dim(response)[1]
+  
+  onv <- array(1,dim = L)
+  predictor <- vector()
+  predictor <- cbind(onv)
+  
+  
+  
+  for(i in N_AR:1) {
+    predictor <- cbind(predictor, Y[i:(L+i-1)])
+  }
+  
+  
+  
+  paras <- pinv(predictor) %*% response
+  Y_hat <- predictor %*% paras
+  output <- list(para = paras, Y_hat = Y_hat, response = response)
+  return(output)
+}
+
+
+ARpredict2 <- function(var1,var2, AR_var1,AR_var2, response, st_pos, lseries) {
+ 
+  response <- cbind(response[st_pos:(st_pos + lseries - 1)])
+  L <- dim(response)[1]
+  
+  onv <- array(1,dim = L)
+  predictor <- vector()
+  predictor <- cbind(onv)
+  
+  
+  
+  for(i in 1:AR_var1) {
+    predictor <- cbind(predictor, var1[(st_pos-i):(st_pos + lseries - 1 -i )])
+  }
+  
+  for(i in 1:AR_var2) {
+    predictor <- cbind(predictor, var2[(st_pos-i):(st_pos + lseries - 1 -i )])
+  }
+  
+  
+  #print(cbind(predictor, var1[1:L],var2[1:L],response))
+  paras <- pinv(predictor) %*% response
+  Y_hat <- predictor %*% paras
+  output <- list(para = paras, Y_hat = Y_hat, response = response)
+  return(output)
+}
+```
+
+```{r simulate models}
+#example using AR_1var
+beta_para <- c(0.1,0.2)
+Y <- AR_1var(beta = beta_para, noise = .5, L = 10000) # you kind of want noise here to be big in order for the result to look obvious. 
+
+#example using AR_2var 
+alpha_para <- c(0.1,0.5)
+X <- AR_2var(self_para = beta_para, cross_para = alpha_para, noise = 0.005, var1 = Y)
+
+
+```
+
+
+```{r make predictions}
+a <- ARpredict1(X$X,1,response = X$X)
+a$para
+
+b <- ARpredict2(var1 = X$X,var2 = Y$Y,AR_var1 = 1,AR_var2 = 2,response = X$X,st_pos = 1000,lseries = 5000)
+b$para
+#para for arpredict2 goes constant, var1 -> response, var2 -> response
+```
+
+```{r plot results of histogram}
+e1 <- a$Y_hat-a$response
+e2 <- b$Y_hat-b$response
+
+f1 <- plot_ly(alpha = 0.5, nbinsx = 150, histnorm = "probability") %>% layout(barmode = "overlay", xaxis = list(title = "residual"), yaxis = list(title = "probability"))
+f1 <- f1 %>% add_histogram(x = as.numeric(e1), bingroup = 1, name = "x on x")
+f1 <- f1 %>% add_histogram(x = as.numeric(e2), bingroup = 1, name = "all on x")
+
+f1
+
+print(paste("pvalue for ks test is",ks.test(e1,e2)$p.value))
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
